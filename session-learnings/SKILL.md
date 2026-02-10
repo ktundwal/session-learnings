@@ -27,11 +27,28 @@ Then scan the current conversation to identify:
 
 ### 2. Determine output directory
 
-Ask the user where to write the artifacts:
+First, check the project's MEMORY.md for a saved session-learnings output path. Look for a line like:
+```
+- **Session artifacts go to `<path>`**
+```
+or a key like `session-learnings-output-dir` in MEMORY.md.
 
-> "Where should I write the session artifacts?"
-> - **`~/ai-session-learnings/{date}-{topic}/`** (Recommended — keeps learnings out of code PRs)
-> - **Subfolder in current workspace** (`./session-learnings/{date}-{topic}/`)
+**If a saved path is found:** Use it as the default. Confirm with the user:
+> "Previous sessions saved learnings to `<saved-path>`. Use the same location?"
+> - **Yes** (Recommended)
+> - **Choose a different location**
+
+**If no saved path is found:** Ask the user:
+> "Where should I write the session artifacts? (Tip: choose a cloud-synced folder like OneDrive so learnings are available across machines.)"
+> - **Central directory** (Recommended) — e.g. `~/ai-session-learnings/{date}-{topic}/`
+> - **Subfolder in current workspace** — `./session-learnings/{date}-{topic}/`
+
+After the user chooses, **save their choice to MEMORY.md** so future sessions remember it automatically. Add a line like:
+```
+- **Session artifacts go to `<chosen-path>\{date}-{topic}/`**
+```
+
+This ensures the preference survives `git pull` updates to this skill — it lives in MEMORY.md, not SKILL.md.
 
 Use the date format `YYYY-MM-DD` and the topic name from step 1 (kebab-case, lowercase).
 
