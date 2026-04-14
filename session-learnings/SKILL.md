@@ -25,6 +25,8 @@ Then scan the current conversation to identify:
 - **Breakthroughs** — The moment(s) that cracked the problem
 - **Open questions** — What remains unresolved or needs follow-up
 
+**IMPORTANT — crash resilience:** After gathering context, immediately proceed to steps 2-3 and write README.md before doing anything else. This ensures partial progress is saved even if the session crashes during later heavy operations (deck generation, npm install, git clone).
+
 ### 2. Determine output directory
 
 First, check the project's MEMORY.md for a saved session-learnings output path. Look for a line like:
@@ -33,10 +35,7 @@ First, check the project's MEMORY.md for a saved session-learnings output path. 
 ```
 or a key like `session-learnings-output-dir` in MEMORY.md.
 
-**If a saved path is found:** Use it as the default. Confirm with the user:
-> "Previous sessions saved learnings to `<saved-path>`. Use the same location?"
-> - **Yes** (Recommended)
-> - **Choose a different location**
+**If a saved path is found:** Use it directly — do NOT ask for confirmation. Just tell the user which path you're using and proceed. Only ask if the path doesn't exist or can't be written to.
 
 **If no saved path is found:** Ask the user:
 > "Where should I write the session artifacts? (Tip: choose a cloud-synced folder like OneDrive so learnings are available across machines.)"
@@ -162,36 +161,33 @@ Summarize the session conversation as a readable markdown document. Do NOT dump 
 
 Focus on the **substance** — user instructions, key decisions, findings, course corrections. Omit repetitive tool call details but preserve the narrative flow.
 
-### 6. Nudge for cross-model review
+### 6. Nudge for cross-model review (optional — skip by default)
 
-Before generating the deck, check if the cross-model review skill is available:
+**Default: Skip this step.** Only run if the user explicitly requests cross-model review, OR if the session involved a complex root cause analysis with an uncertain hypothesis.
 
-Tell the user:
+If running: invoke `/crossmodel-review` on the `investigation-log.md` file. Save the synthesis output as `crossmodel-review-synthesis.md` in the output directory.
 
-> "The `/crossmodel-review` skill is available and can improve the quality of your investigation log and hypothesis by getting independent review from GPT and Gemini. **Recommended** for sessions involving root cause analysis, architectural decisions, or any hypothesis that will drive code changes."
->
-> - **Run cross-model review** (Recommended) — Reviews the investigation-log.md
-> - **Skip** — Proceed directly to deck generation
-
-If the user chooses to run it, invoke `/crossmodel-review` on the `investigation-log.md` file. Save the synthesis output as `crossmodel-review-synthesis.md` in the output directory.
-
-If the user skips, proceed to the next step.
+Otherwise, proceed directly to deck generation. Do NOT ask the user — just proceed.
 
 ### 7. Generate presentation deck
+
+**IMPORTANT — all paths with spaces must be double-quoted in Bash commands.** The OneDrive output path contains spaces.
 
 Check if the `presentation-skills` repo is available:
 
 ```bash
-ls "$HOME/presentation-skills" 2>nul 2>/dev/null || ls /c/github/presentation-skills 2>nul 2>/dev/null
+ls "$HOME/presentation-skills" 2>/dev/null || ls "/c/github/presentation-skills" 2>/dev/null
 ```
 
-If not found, clone it:
+If not found, clone it (set a timeout to avoid hanging):
 
 ```bash
-git clone https://github.com/ktundwal/presentation-skills "$HOME/presentation-skills"
+timeout 30 git clone --depth 1 https://github.com/ktundwal/presentation-skills "$HOME/presentation-skills"
 ```
 
-Read the starter template and Marp reference from the repo:
+**If the clone fails or times out, skip the template and generate the deck with basic Marp styling inline.** Do not block on this.
+
+Read the starter template and Marp reference from the repo (if available):
 - `skills/marp-deck/examples/starter-deck.md` — Use as base template for styling
 - `skills/marp-deck/marp-reference.md` — Reference for Marp syntax
 
@@ -214,22 +210,29 @@ Use the dark-light sandwich pattern: dark title → light content → dark closi
 
 Add speaker notes as HTML comments where helpful.
 
-### 8. Export deck to PPTX and HTML
+### 8. Export deck to PPTX and HTML (best-effort — don't block on failure)
 
-Ensure marp-cli is available:
+**This step is best-effort.** If marp-cli install or export fails, report the failure and move on. The `deck.md` source file is the primary artifact — PPTX/HTML are bonuses.
 
-```bash
-npm list @marp-team/marp-cli 2>/dev/null || npm install --save-dev @marp-team/marp-cli
-```
-
-Export to all formats:
+Ensure marp-cli is available (use the presentation-skills repo's copy if available, otherwise install globally with timeout):
 
 ```bash
-npx @marp-team/marp-cli deck.md --html --allow-local-files --bespoke.progress true -o deck.html
-npx @marp-team/marp-cli deck.md --pptx --allow-local-files -o deck.pptx
+# Check presentation-skills repo first
+if [ -d "$HOME/presentation-skills" ]; then
+  cd "$HOME/presentation-skills" && npm list @marp-team/marp-cli 2>/dev/null || timeout 60 npm install --save-dev @marp-team/marp-cli
+else
+  npm list -g @marp-team/marp-cli 2>/dev/null || timeout 60 npm install -g @marp-team/marp-cli
+fi
 ```
 
-Report the exported file paths to the user.
+Export to all formats (quote all paths):
+
+```bash
+npx @marp-team/marp-cli "$OUTPUT_DIR/deck.md" --html --allow-local-files --bespoke.progress true -o "$OUTPUT_DIR/deck.html"
+npx @marp-team/marp-cli "$OUTPUT_DIR/deck.md" --pptx --allow-local-files -o "$OUTPUT_DIR/deck.pptx"
+```
+
+**If either export fails**, report which format failed and move on. Don't retry.
 
 ### 9. Update MEMORY.md
 
@@ -279,4 +282,7 @@ Tip: Open deck.html locally in a browser for full slide navigation.
 - Dead ends and failed approaches are explicitly captured because they save the most time in future sessions
 - The deck is designed to be presentation-ready for team standups, bug reviews, or knowledge sharing
 - All artifacts are plain markdown — portable across tools, machines, and AI assistants
-- Use `2>nul 2>/dev/null` for cross-platform stderr suppression (Windows + Unix)
+- Use `2>/dev/null` for stderr suppression (works on both bash-on-Windows and Unix)
+- **Crash resilience:** Write README.md → investigation-log.md → chat-transcript.md sequentially before attempting any heavy operations (git clone, npm install, marp export). Each file saved is progress preserved.
+- **Path safety:** The OneDrive output path contains spaces (`OneDrive - Microsoft`). ALL Bash commands must double-quote paths. Use Write tool (not Bash echo/cat) to create files — the Write tool handles paths correctly.
+- **No blocking on optional steps:** Cross-model review and Marp export are best-effort. Never block the session on npm install or git clone — use timeouts and fall back gracefully.
